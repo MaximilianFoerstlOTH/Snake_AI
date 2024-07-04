@@ -20,20 +20,19 @@ class Game(gymnasium.Env):
         self.action_space = gymnasium.spaces.Discrete(3)
         ## Observation space is the board
         self.observation_space = gymnasium.spaces.Box(
-            low=0, high=2, shape=(width, height), dtype=int
+            low=0, high=2, shape=(width,height,), dtype=int
         )
-        self.reward_range = (-100, 50)
-
+        self.reward_range = (-width, 0)
         ## 0 = up, 1 = right, 2 = down, 3 = left
         self.direction = random.randint(0, 3)
-        self.board = [[0 for x in range(width)] for y in range(height)]
-
+        #self.board = [[0 for x in range(width)] for y in range(height)]
+        #self.board = np.array(self.board)
+        self.board = np.zeros((width, height))
         ## Create a double linked list for the snake
         self.snake = deque()
         self.eaten = False
         self.apple = (0, 0)
         self.reseted = False
-        self.reward = 0
         ##Setup pygame
         self.running = True
         self.FPS = FPS
@@ -53,7 +52,6 @@ class Game(gymnasium.Env):
                 if event.type == pygame.QUIT:
                     self.close()
 
-        self.reward = -1
         ## make game mechanics
         self.move(np.argmax(action))
         self.steps += 1
@@ -65,7 +63,7 @@ class Game(gymnasium.Env):
         if self.render_game:
             self.clock.tick(self.FPS)
 
-        return np.array(self.board), self.reward, self.reseted, self.truncated, {}
+        return self.board, self.reward(), self.reseted, self.truncated, {}
 
     def render(self):
         if not self.render_game:
@@ -112,7 +110,6 @@ class Game(gymnasium.Env):
         self.snake.append(poped)
         self.spawnApple()
         self.eaten = True
-        self.reward += 50
 
     def checkCollision(self, poped):
         # Check collsion with border
@@ -123,7 +120,6 @@ class Game(gymnasium.Env):
             or self.snake[0][1] >= height
         ):
             print("Collision with border : reset")
-            self.reward -= 100
             self.reset()
         elif self.board[self.snake[0][0]][self.snake[0][1]] == 2:
             print("apple eaten")
@@ -189,9 +185,7 @@ class Game(gymnasium.Env):
         random.seed(seed)
         self.reseted = True
         self.snake.clear()
-        for lists in self.board:
-            for i in range(len(lists)):
-                lists[i] = 0
+        self.board = np.zeros((width, height))
 
         self.snake.append((random.randint(1, width - 2), random.randint(1, height - 2)))
         self.direction = random.randint(0, 3)
@@ -201,7 +195,7 @@ class Game(gymnasium.Env):
 
         self.render()
 
-        return np.array(self.board), {}
+        return self.board, {}
 
         # Set direction to forward
 
@@ -211,3 +205,7 @@ class Game(gymnasium.Env):
             pygame.quit()
         self.running = False
         exit()
+
+    def reward(self):
+        # reward is the distance to the apple
+        return -np.sqrt((self.snake[0][0] - self.apple[0]) ** 2 + (self.snake[0][1] - self.apple[1]) ** 2)
