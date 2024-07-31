@@ -4,8 +4,8 @@ import random
 import gymnasium
 import numpy as np
 
-width = 15
-height = 15
+width = 10
+height = 10
 
 square_size = 40
 screenwidth = width * square_size
@@ -14,60 +14,75 @@ screenheight = height * square_size
 
 class Game(gymnasium.Env):
 
-    def __init__(self, render_game, FPS=10) -> None:
-        self.render_game = render_game
+    def __init__(self, render_mode=None, FPS=10) -> None:
+        self.render_mode = render_mode
         self.steps = 0
         self.action_space = gymnasium.spaces.Discrete(3)
         ## Observation space is the board
         self.observation_space = gymnasium.spaces.Box(
             low=0, high=2, shape=(width,height,), dtype=int
         )
-        self.reward_range = (-width, 0)
+        self.reward_range = (min(-10, -width), 100)
         ## 0 = up, 1 = right, 2 = down, 3 = left
         self.direction = random.randint(0, 3)
-        #self.board = [[0 for x in range(width)] for y in range(height)]
-        #self.board = np.array(self.board)
         self.board = np.zeros((width, height))
+
         ## Create a double linked list for the snake
         self.snake = deque()
         self.eaten = False
         self.apple = (0, 0)
         self.reseted = False
+        self.reward_var = 0
+
         ##Setup pygame
         self.running = True
         self.FPS = FPS
         self.truncated = False
-        if self.render_game:
-            pygame.init()
-            self.screen = pygame.display.set_mode((screenwidth, screenheight))
-            pygame.display.set_caption("Snake")
-            self.clock = pygame.time.Clock()
+
+        #self.screen = pygame.display.set_mode((screenwidth, screenheight))
+        self.screen = None
+        self.clock = None
+        # self.clock = pygame.time.Clock()
 
         self.reset()
 
     def step(self, action):
-        # Did the user click the window close button?
-        if self.render_game:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.close()
-
         ## make game mechanics
-        self.move(np.argmax(action))
+        self.reward_var = None
+        self.move(action)
         self.steps += 1
         ## render game
-        self.render()
+        if self.render_mode == "human":
+            self.render()
 
-        if self.steps > 1000:
+        if self.steps > 100:
             self.truncated = True
-        if self.render_game:
-            self.clock.tick(self.FPS)
+            self.steps = 0 
 
-        return self.board, self.reward(), self.reseted, self.truncated, {}
+        if self.reward_var is None:
+            self.reward_var = -min(abs(self.apple[0] - self.snake[0][0]), abs(self.apple[1] - self.snake[0][1]))
+
+        return np.array(self.board, dtype=np.int64), self.reward_var, self.reseted, self.truncated, {}
 
     def render(self):
-        if not self.render_game:
+        if self.render_mode is None:
             return
+        
+        if self.screen is None:
+            pygame.init()
+            if self.render_mode == "human":
+                pygame.display.init()
+                self.screen = pygame.display.set_mode((screenwidth, screenheight))
+            else:  # mode in "rgb_array"
+                self.screen = pygame.Surface((screenwidth, screenheight))
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
+
+
+        # Did the user click the window close button?
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.close()
 
         self.screen.fill((255, 255, 255))
 
@@ -94,7 +109,15 @@ class Game(gymnasium.Env):
                         (x * square_size, y * square_size, square_size, square_size),
                     )
 
-        pygame.display.flip()
+        if self.render_mode == "human":
+            pygame.event.pump()
+            self.clock.tick(self.FPS)
+            pygame.display.flip()
+        elif self.render_mode == "rgb_array":
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2)
+            )
+        
 
     def spawnApple(self):
         x = random.randint(0, width - 1)
@@ -120,19 +143,23 @@ class Game(gymnasium.Env):
             or self.snake[0][1] >= height
         ):
             print("Collision with border : reset")
-            self.reset()
+            self.reward_var = -10
+            #self.reset()
+            self.reseted = True
         elif self.board[self.snake[0][0]][self.snake[0][1]] == 2:
             print("apple eaten")
+            self.reward_var = 100
+            self.steps = 0
             self.eatApple(poped=poped)
 
         elif self.board[self.snake[0][0]][self.snake[0][1]] == 1:
-            self.reward -= 100
             print("Collision with snake : reset")
-            self.reset()
+            self.reward_var = -10
+            #self.reset()
+            self.reseted = True
 
     def setDirectionWithKeys(self):
-        if not self.render_game:
-            return
+        
 
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT]:
@@ -182,8 +209,12 @@ class Game(gymnasium.Env):
                 self.board[poped[0]][poped[1]] = 0
 
     def reset(self, seed=None):
-        random.seed(seed)
-        self.reseted = True
+        super().reset(seed=seed)
+
+
+        self.reseted = False
+        self.truncated = False
+        self.steps = 0
         self.snake.clear()
         self.board = np.zeros((width, height))
 
@@ -195,17 +226,15 @@ class Game(gymnasium.Env):
 
         self.render()
 
-        return self.board, {}
+        return np.array(self.board, dtype=np.int64), {}
 
         # Set direction to forward
 
     def close(self):
-        if self.render_game:
+        if self.screen is not None:
             pygame.display.quit()
             pygame.quit()
-        self.running = False
-        exit()
 
-    def reward(self):
+    #def reward(self, value=None):
         # reward is the distance to the apple
-        return -np.sqrt((self.snake[0][0] - self.apple[0]) ** 2 + (self.snake[0][1] - self.apple[1]) ** 2)
+        #return -np.sqrt((self.snake[0][0] - self.apple[0]) ** 2 + (self.snake[0][1] - self.apple[1]) ** 2)
