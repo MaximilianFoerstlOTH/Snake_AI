@@ -3,7 +3,7 @@ from collections import deque
 import random
 import gymnasium
 import numpy as np
-
+from gymnasium.spaces import Discrete, Box, Tuple
 width = 10
 height = 10
 
@@ -17,12 +17,11 @@ class Game(gymnasium.Env):
     def __init__(self, render_mode=None, FPS=10) -> None:
         self.render_mode = render_mode
         self.steps = 0
-        self.action_space = gymnasium.spaces.Discrete(3)
+        self.action_space = Discrete(3)
         ## Observation space is the board
-        self.observation_space = gymnasium.spaces.Box(
-            low=0, high=2, shape=(width,height,), dtype=int
-        )
-        self.reward_range = (min(-10, -width), 100)
+        #self.observation_space = Box(low = np.array([0,0,0,0,0, 0, 0,0,0,0,0], dtype=np.float32), high = np.array([width, height,width, height,3, width * height, width + height,3,3,3,3], dtype=np.float32), dtype=np.float32)
+        self.observation_space = Box(low = np.array([0,0,0,0,0,0,0,0], dtype=np.float32), high = np.array([width, height,3, width + height,2, 2,2,2], dtype=np.float32), dtype=np.float32)
+        self.reward_range = (min(-10, -width), 10)
         ## 0 = up, 1 = right, 2 = down, 3 = left
         self.direction = random.randint(0, 3)
         self.board = np.zeros((width, height))
@@ -33,6 +32,8 @@ class Game(gymnasium.Env):
         self.apple = (0, 0)
         self.reseted = False
         self.reward_var = 0
+        self.last_two = [1,1]
+
 
         ##Setup pygame
         self.running = True
@@ -55,14 +56,25 @@ class Game(gymnasium.Env):
         if self.render_mode == "human":
             self.render()
 
+        # last two steps
+        self.last_two[0] = self.last_two[1]
+        self.last_two[1] = action
+
+
         if self.steps > 100:
-            self.truncated = True
+            self.reseted = True
+            self.reward_var = -10
             self.steps = 0 
 
-        if self.reward_var is None:
-            self.reward_var = -min(abs(self.apple[0] - self.snake[0][0]), abs(self.apple[1] - self.snake[0][1]))
+        
 
-        return np.array(self.board, dtype=np.int64), self.reward_var, self.reseted, self.truncated, {}
+        if self.reward_var is None:
+            snake_head = self.snake[0]
+            apple = self.apple
+            self.reward_var = -(abs(apple[0] - snake_head[0]) + abs(apple[1] - snake_head[1]))
+            
+
+        return self.getState(), self.reward_var, self.reseted, self.truncated, {}
 
     def render(self):
         if self.render_mode is None:
@@ -142,18 +154,18 @@ class Game(gymnasium.Env):
             or self.snake[0][1] < 0
             or self.snake[0][1] >= height
         ):
-            print("Collision with border : reset")
+            #print("Collision with border : reset")
             self.reward_var = -10
             #self.reset()
             self.reseted = True
         elif self.board[self.snake[0][0]][self.snake[0][1]] == 2:
-            print("apple eaten")
-            self.reward_var = 100
+            #print("apple eaten")
+            self.reward_var = 10
             self.steps = 0
             self.eatApple(poped=poped)
 
         elif self.board[self.snake[0][0]][self.snake[0][1]] == 1:
-            print("Collision with snake : reset")
+            #print("Collision with snake : reset")
             self.reward_var = -10
             #self.reset()
             self.reseted = True
@@ -226,15 +238,39 @@ class Game(gymnasium.Env):
 
         self.render()
 
-        return np.array(self.board, dtype=np.int64), {}
-
-        # Set direction to forward
+        return self.getState(), {}
 
     def close(self):
         if self.screen is not None:
             pygame.display.quit()
             pygame.quit()
 
+
+    def getState(self):
+        # get what is to the sides of the snake
+        board_with_bounds = []
+        board_with_bounds.append([1.0] * (width + 2))
+        for line in self.board:
+            board_with_bounds.append([1.0] + line.tolist() + [1.0])
+        board_with_bounds.append([1.0] * (width + 2))
+
+ 
+
+        top = board_with_bounds[self.snake[0][0]][self.snake[0][1] - 1] 
+        right = board_with_bounds[self.snake[0][0] + 1][self.snake[0][1]]
+        bottom = board_with_bounds[self.snake[0][0]][self.snake[0][1] + 1]
+        left = board_with_bounds[self.snake[0][0] - 1][self.snake[0][1]]
+
+        apple = self.apple
+
+        #distance to apple
+        distance = abs(apple[0] - self.snake[0][0]) + abs(apple[1] - self.snake[0][1])
+
+        snake_head = self.snake[0]
+        return np.array([snake_head[0],snake_head[1],self.direction, distance,
+                         # len(self.snake), abs(apple[0] - snake_head[0]) + abs(apple[1] - snake_head[1]), 
+                        top, right, left, bottom], dtype=np.float32)
+    
     #def reward(self, value=None):
         # reward is the distance to the apple
         #return -np.sqrt((self.snake[0][0] - self.apple[0]) ** 2 + (self.snake[0][1] - self.apple[1]) ** 2)

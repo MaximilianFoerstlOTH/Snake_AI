@@ -1,4 +1,4 @@
-from stable_baselines3 import DQN
+from stable_baselines3 import DQN, PPO
 from stable_baselines3.common.env_checker import check_env
 from game import Game
 import numpy as np
@@ -8,11 +8,37 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import torch.nn as nn
 import gymnasium
 from gymnasium.envs.registration import register
+from stable_baselines3.common.callbacks import BaseCallback
+import torch
 
 # Create the environment
 #env = Game(render_mode="rgb_array", FPS=10)
 
 
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for logging additional values in TensorBoard.
+    """
+
+    def __init__(self, log_dir, verbose=1):
+        super(TensorboardCallback, self).__init__(verbose)
+        self.log_dir = log_dir
+        self.writer = None
+
+    def _on_training_start(self) -> None:
+        if self.writer is None:
+            self.writer = torch.utils.tensorboard.SummaryWriter(self.log_dir)
+
+    def _on_step(self) -> bool:
+        # Log the reward at each step
+        reward = self.locals['rewards'][0]
+        self.writer.add_scalar('reward', reward, self.num_timesteps)
+        return True
+
+    def _on_training_end(self) -> None:
+        if self.writer is not None:
+            self.writer.close()
+            self.writer = None
 
 
 register(
@@ -22,13 +48,12 @@ register(
 )
 
 
-
 env = gymnasium.make('SnakeGame-v0')
 
 # It will check your custom environment and output additional warnings if needed
 check_env(env)
 
-env = DummyVecEnv([lambda: env])
+#env = DummyVecEnv([lambda: env])
 
 class CustomCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=100):
@@ -43,18 +68,20 @@ class CustomCNN(BaseFeaturesExtractor):
         )
 
     def forward(self, observations):
-        observations = observations.unsqueeze(1)
-        observations = observations.reshape((observations.shape[0], 1, 10, 10))
         return self.cnn(observations)
 
 # Create the model
-model = DQN("CnnPolicy", env, verbose=1, tensorboard_log="./dqn_snake_tensorboard/", policy_kwargs={"features_extractor_class": CustomCNN, "features_extractor_kwargs": {"features_dim": 128}})
 
+### CNN model
+#model = DQN("CnnPolicy", env, verbose=1, tensorboard_log="./dqn_snake_tensorboard/", policy_kwargs={"features_extractor_class": CustomCNN, "features_extractor_kwargs": {"features_dim": 128}})
+model = DQN("MlpPolicy", env, verbose=1, tensorboard_log="./dqn_snake_tensorboard_discrete/")
+
+callback = TensorboardCallback("./dqn_snake_tensorboard_discrete/")
 
 #Train the agent
-model.learn(total_timesteps=100000, progress_bar=True)
-model.save("dqn_snake")
-del model
+#model.learn(total_timesteps=100000, progress_bar=True, callback=callback)
+#model.save("dqn_snake")
+#del model
 
 env = Game(render_mode="human", FPS=20)
 #env = gymnasium.make('SnakeGame-v0')
@@ -69,6 +96,6 @@ obs = env.reset()
 for i in range(10000):
     action, _states = model.predict(obs, deterministic=True)
     obs, rewards, reseted, _ = env.step(action)
-    env.render("human")
+    env.render()
     if reseted :
         obs = env.reset()
