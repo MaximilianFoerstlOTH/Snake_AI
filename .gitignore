@@ -1,5 +1,4 @@
 venv
-dqn*
-*.zip
+dqn_snake_tensorboard*
 runs
 test*

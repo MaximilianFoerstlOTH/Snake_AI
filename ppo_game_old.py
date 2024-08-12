@@ -3,7 +3,7 @@ from collections import deque
 import random
 import gymnasium
 import numpy as np
-from gymnasium.spaces import Discrete, Box, Tuple
+from gymnasium.spaces import Discrete, Box
 
 width = 10
 height = 10
@@ -17,48 +17,31 @@ screenheight = height * square_size
 class Game(gymnasium.Env):
 
     def __init__(self, render_mode=None, FPS=10) -> None:
-        super(Game, self).__init__()
         self.render_mode = render_mode
         self.steps = 0
-
-        self.board_shape = (4, width + 2, height + 2)
-        flattened_board_size = np.prod(self.board_shape)
-
-        additional_info_size = 5
-
-        ####
-        ##  0 = up, 1 = right, 2 = down, 3 = left
-        ####
-        self.action_space = Discrete(4)
-        ####
-        ##
-        ####
-        # self.observation_space = Box(
-        #    low=0, high=3, shape=(4, width + 2, height + 2), dtype=np.float32
-        # )
+        self.action_space = Discrete(4, start=0)
+        ## Observation space is the board
+        # self.observation_space = Box(low = np.array([0,0,0,0,0, 0, 0,0,0,0,0], dtype=np.float32), high = np.array([width, height,width, height,3, width * height, width + height,3,3,3,3], dtype=np.float32), dtype=np.float32)
         self.observation_space = Box(
-            low=0,
-            high=width + height,
-            shape=(flattened_board_size + additional_info_size,),
+            low=np.array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.float32),
+            high=np.array(
+                [width, height, 3, width, height, 1, 1, 1, 1],
+                dtype=np.float32,
+            ),
             dtype=np.float32,
         )
-
-        self.reward_range = (min(-100, -(width + height)), 100)
+        self.reward_range = (min(-1000, -(width + height)), 10)
         ## 0 = up, 1 = right, 2 = down, 3 = left
         self.direction = random.randint(0, 3)
         self.board = np.zeros((width, height))
 
-        self.last_board = deque(maxlen=4)
-        for i in range(4):
-            self.last_board.append(self.board.copy())
-
-        self.last_snake = deque(maxlen=4)
         ## Create a double linked list for the snake
-        self.snake = deque(maxlen=width * height)
+        self.snake = deque()
         self.eaten = False
         self.apple = (0, 0)
         self.reseted = False
         self.reward_var = 0
+        self.last_actions = deque([0, 0, 0, 0, 0], maxlen=last_actions_size)
 
         ##Setup pygame
         self.running = True
@@ -81,22 +64,20 @@ class Game(gymnasium.Env):
         if self.render_mode == "human":
             self.render()
 
-        # Store the last 4 boards
-        self.last_board.append(self.board.copy())
-        self.last_snake.append(self.snake[0])
+        # last two steps
+        self.last_actions.append(action)
 
         if self.steps > 100:
             self.truncated = True
-            self.reward_var = -100
+            self.reward_var = -1000
             self.steps = 0
 
         if self.reward_var is None:
-            # snake_head = self.snake[0]
-            # apple = self.apple
-            # self.reward_var = -(
-            #    abs(apple[0] - snake_head[0]) + abs(apple[1] - snake_head[1])
-            # )
-            self.reward_var = -self.steps / 20
+            snake_head = self.snake[0]
+            apple = self.apple
+            self.reward_var = -(
+                abs(apple[0] - snake_head[0]) + abs(apple[1] - snake_head[1])
+            )
 
         return self.getState(), self.reward_var, self.reseted, self.truncated, {}
 
@@ -169,22 +150,26 @@ class Game(gymnasium.Env):
         self.eaten = True
 
     def checkCollision(self, poped):
-        head = self.snake[0]
         # Check collsion with border
-        if head[0] < 0 or head[0] >= width or head[1] < 0 or head[1] >= height:
+        if (
+            self.snake[0][0] < 0
+            or self.snake[0][0] >= width
+            or self.snake[0][1] < 0
+            or self.snake[0][1] >= height
+        ):
             # print("Collision with border : reset")
-            self.reward_var = -100
+            self.reward_var = -1000
             # self.reset()
             self.reseted = True
-        elif self.board[head[0]][head[1]] == 2:
+        elif self.board[self.snake[0][0]][self.snake[0][1]] == 2:
             # print("apple eaten")
-            self.reward_var = 100
+            self.reward_var = 10
             self.steps = 0
             self.eatApple(poped=poped)
 
-        elif self.board[head[0]][head[1]] == 1:
+        elif self.board[self.snake[0][0]][self.snake[0][1]] == 1:
             # print("Collision with snake : reset")
-            self.reward_var = -100
+            self.reward_var = -1000
             # self.reset()
             self.reseted = True
 
@@ -203,8 +188,6 @@ class Game(gymnasium.Env):
     def setDirection(self, action):
         if action == None:
             return
-
-        action = int(action)
         if self.direction == 0 and action == 2:
             self.direction = 0
         elif self.direction == 2 and action == 0:
@@ -221,20 +204,18 @@ class Game(gymnasium.Env):
         self.setDirection(action=action)
 
         poped = []
-        x = self.snake[0][0]
-        y = self.snake[0][1]
 
         if self.direction == 1:
-            self.snake.appendleft((x + 1, y))
+            self.snake.appendleft((self.snake[0][0] + 1, self.snake[0][1]))
             poped = self.snake.pop()
         elif self.direction == 3:
-            self.snake.appendleft((x - 1, y))
+            self.snake.appendleft((self.snake[0][0] - 1, self.snake[0][1]))
             poped = self.snake.pop()
         elif self.direction == 0:
-            self.snake.appendleft((x, y - 1))
+            self.snake.appendleft((self.snake[0][0], self.snake[0][1] - 1))
             poped = self.snake.pop()
         elif self.direction == 2:
-            self.snake.appendleft((x, y + 1))
+            self.snake.appendleft((self.snake[0][0], self.snake[0][1] + 1))
             poped = self.snake.pop()
 
         self.eaten = False
@@ -251,27 +232,21 @@ class Game(gymnasium.Env):
     def reset(self, seed=None):
         super().reset(seed=seed)
 
+        self.reseted = False
+        self.truncated = False
+        self.steps = 0
         self.snake.clear()
+        self.board = np.zeros((width, height))
+
         self.snake.append((random.randint(1, width - 2), random.randint(1, height - 2)))
         self.direction = random.randint(0, 3)
-
-        self.steps = 0
-        self.board = np.zeros((width, height))
 
         self.board[self.snake[0][0]][self.snake[0][1]] = 1
         self.spawnApple()
 
-        self.last_board.clear()
-        for i in range(4):
-            self.last_board.append(self.board.copy())
-        self.last_snake.clear()
-
-        state = self.getState()
-
-        self.reseted = False
-        self.truncated = False
         self.render()
-        return state, {}
+
+        return self.getState(), {}
 
     def close(self):
         if self.screen is not None:
@@ -279,50 +254,149 @@ class Game(gymnasium.Env):
             pygame.quit()
 
     def getState(self):
-        # extra info with the snake position and the apple position and the direction
-        additional_info = np.array(
+        # get what is to the sides of the snake
+        board_with_bounds = []
+        board_with_bounds.append([1.0] * (width + 2))
+        for line in self.board:
+            board_with_bounds.append([1.0] + line.tolist() + [1.0])
+        board_with_bounds.append([1.0] * (width + 2))
+
+        top = 0
+        right = 0
+        bottom = 0
+        left = 0
+        if not self.reseted and not self.truncated:
+            top = int(
+                board_with_bounds[self.snake[0][0] + 1][self.snake[0][1] + 1 - 1] == 1
+            )
+            right = int(
+                board_with_bounds[self.snake[0][0] + 1 + 1][self.snake[0][1] + 1] == 1
+            )
+            bottom = int(
+                board_with_bounds[self.snake[0][0] + 1][self.snake[0][1] + 1 + 1] == 1
+            )
+            left = int(
+                board_with_bounds[self.snake[0][0] + 1 - 1][self.snake[0][1] + 1] == 1
+            )
+        else:
+            top = 1
+            right = 1
+            bottom = 1
+            left = 1
+        apple = self.apple
+
+        # distance to apple
+        distance = abs(apple[0] - self.snake[0][0]) + abs(apple[1] - self.snake[0][1])
+
+        snake_head = self.snake[0]
+        return np.array(
             [
-                self.snake[0][0],
-                self.snake[0][1],
-                self.apple[0],
-                self.apple[1],
+                snake_head[0],
+                snake_head[1],
                 self.direction,
+                # distance,
+                # len(self.snake),
+                apple[0],
+                apple[1],
+                # abs(apple[0] - snake_head[0]) + abs(apple[1] - snake_head[1]),
+                top,
+                right,
+                left,
+                bottom,
+                # self.last_actions[0],
+                # self.last_actions[1],
+                # self.last_actions[2],
+                # self.last_actions[3],
+                # self.last_actions[4],
             ],
             dtype=np.float32,
         )
 
-        if not self.reseted:
-            # return the board
-            for i in range(len(self.last_snake)):
-                snake_head = self.last_snake[i]
-
-                # add the border to the board
-                self.last_board[i]
-                self.last_board[i][snake_head[0]][snake_head[1]] = 3
-
-        # convert the board to a numpy array
-        board_arr = np.array(self.last_board, dtype=np.float32)
-
-        # add the borders to the board_arr. A boder is a 1 The new shape is (4, 12, 12)
-        board_arr = np.pad(
-            board_arr, ((0, 0), (1, 1), (1, 1)), "constant", constant_values=1
-        )
-
-        # flatten the board
-        flattened_board = board_arr.flatten()
-
-        concat = np.concatenate([flattened_board, additional_info])
-
-        return concat
+    # def reward(self, value=None):
+    # reward is the distance to the apple
+    # return -np.sqrt((self.snake[0][0] - self.apple[0]) ** 2 + (self.snake[0][1] - self.apple[1]) ** 2)
 
 
-if __name__ == "__main__":
-    env = Game(render_mode="human", FPS=1)
-    env.reset()
-    while True:
-        action = env.setDirectionWithKeys()
-        obs, reward, reseted, truncated, info = env.step(action)
-        if reseted or truncated:
-            env.reset()
-        env.render()
-    env.close()
+from stable_baselines3 import DQN, PPO
+from stable_baselines3.common.env_checker import check_env
+from game import Game
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+import torch.nn as nn
+from gymnasium.envs.registration import register
+from stable_baselines3.common.callbacks import BaseCallback
+import torch
+
+# Create the environment
+# env = Game(render_mode="rgb_array", FPS=10)
+
+
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for logging additional values in TensorBoard.
+    """
+
+    def __init__(self, log_dir, verbose=1):
+        super(TensorboardCallback, self).__init__(verbose)
+        self.log_dir = log_dir
+        self.writer = None
+
+    def _on_training_start(self) -> None:
+        if self.writer is None:
+            self.writer = torch.utils.tensorboard.SummaryWriter(self.log_dir)
+
+    def _on_step(self) -> bool:
+        # Log the reward at each step
+        reward = self.locals["rewards"][0]
+        self.writer.add_scalar("reward", reward, self.num_timesteps)
+        return True
+
+    def _on_training_end(self) -> None:
+        if self.writer is not None:
+            self.writer.close()
+            self.writer = None
+
+
+register(
+    id="SnakeGame-v0",
+    entry_point="game:Game",
+    max_episode_steps=1000,
+)
+
+
+env = gymnasium.make("SnakeGame-v0")
+
+
+# env = DummyVecEnv([lambda: env])
+
+# Create the model
+
+### CNN model
+model = PPO(
+    "MlpPolicy", env, verbose=1, tensorboard_log="./dqn_snake_tensorboard_discrete/"
+)
+
+callback = TensorboardCallback("./dqn_snake_tensorboard_discrete/")
+
+# Train the agent
+# model.learn(total_timesteps=15_000_000, progress_bar=True, callback=callback)
+# model.save("dqn_snake")
+# del model
+
+env = Game(render_mode="human", FPS=20)
+# env = gymnasium.make('SnakeGame-v0')
+
+model = PPO.load("ppo_snake_richtig_gut", env=env)
+env = model.get_env()
+
+# Test the trained agent
+obs = env.reset()
+
+
+for i in range(10000):
+    action, _states = model.predict(obs, deterministic=True)
+    obs, rewards, reseted, _ = env.step(action)
+    env.render()
+    if reseted:
+        obs = env.reset()
