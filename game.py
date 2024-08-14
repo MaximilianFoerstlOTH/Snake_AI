@@ -21,25 +21,18 @@ class Game(gymnasium.Env):
         self.render_mode = render_mode
         self.steps = 0
 
-        self.board_shape = (4, width + 2, height + 2)
-        flattened_board_size = np.prod(self.board_shape)
-
         additional_info_size = 5
 
         ####
         ##  0 = up, 1 = right, 2 = down, 3 = left
         ####
         self.action_space = Discrete(4)
-        ####
-        ##
-        ####
-        # self.observation_space = Box(
-        #    low=0, high=3, shape=(4, width + 2, height + 2), dtype=np.float32
-        # )
+
+        # Observation space is the extra information + the snakes body
         self.observation_space = Box(
-            low=0,
-            high=width + height,
-            shape=(flattened_board_size + additional_info_size,),
+            low=-1,
+            high=width,
+            shape=(additional_info_size + width * height * 2,),
             dtype=np.float32,
         )
 
@@ -291,27 +284,16 @@ class Game(gymnasium.Env):
             dtype=np.float32,
         )
 
-        if not self.reseted:
-            # return the board
-            for i in range(len(self.last_snake)):
-                snake_head = self.last_snake[i]
+        # Convert the deque to a numpy array and get rid of tuples
+        fixed_length_snake_array = np.zeros((width * height * 2,), dtype=np.float32)
+        # Make default value -1
+        fixed_length_snake_array.fill(-1)
 
-                # add the border to the board
-                self.last_board[i]
-                self.last_board[i][snake_head[0]][snake_head[1]] = 3
+        for i, s in enumerate(self.snake):
+            fixed_length_snake_array[i] = s[0]
+            fixed_length_snake_array[i + 1] = s[1]
 
-        # convert the board to a numpy array
-        board_arr = np.array(self.last_board, dtype=np.float32)
-
-        # add the borders to the board_arr. A boder is a 1 The new shape is (4, 12, 12)
-        board_arr = np.pad(
-            board_arr, ((0, 0), (1, 1), (1, 1)), "constant", constant_values=1
-        )
-
-        # flatten the board
-        flattened_board = board_arr.flatten()
-
-        concat = np.concatenate([flattened_board, additional_info])
+        concat = np.concatenate([additional_info, fixed_length_snake_array])
 
         return concat
 

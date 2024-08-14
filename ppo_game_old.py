@@ -380,14 +380,14 @@ model = PPO(
 callback = TensorboardCallback("./dqn_snake_tensorboard_discrete/")
 
 # Train the agent
-# model.learn(total_timesteps=15_000_000, progress_bar=True, callback=callback)
-# model.save("dqn_snake")
+model.learn(total_timesteps=10_000_000, progress_bar=True, callback=callback)
+model.save("dqn_snake")
 # del model
 
 env = Game(render_mode="human", FPS=20)
 # env = gymnasium.make('SnakeGame-v0')
 
-model = PPO.load("ppo_snake_richtig_gut", env=env)
+model = PPO.load("dqn_snake", env=env)
 env = model.get_env()
 
 # Test the trained agent
