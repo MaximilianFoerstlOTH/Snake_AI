@@ -24,6 +24,8 @@
 
 ## Quick start
 
+> **Don't have uv?** `curl -LsSf https://astral.sh/uv/install.sh | sh` — see the [uv install docs](https://docs.astral.sh/uv/getting-started/installation/) for other platforms.
+
 ```bash
 uv sync                      # install dependencies (Python 3.13)
 
