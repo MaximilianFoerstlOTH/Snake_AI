@@ -1,1 +1,0 @@
-/home/zar/Documents/repos/Snake_AI/.venv/bin/python3 -m train

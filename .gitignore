@@ -5,3 +5,4 @@ dqn*
 runs
 test*
 logs
+__pycache__/
