@@ -1,5 +1,7 @@
 venv
 dqn*
+!dqn.yml
 *.zip
 runs
 test*
+logs

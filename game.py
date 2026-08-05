@@ -4,6 +4,10 @@ import random
 import gymnasium
 import numpy as np
 from gymnasium.spaces import Discrete, Box, Tuple
+
+from gymnasium.envs.registration import register
+
+
 width = 10
 height = 10
 
@@ -13,14 +17,24 @@ screenheight = height * square_size
 
 
 class Game(gymnasium.Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
 
-    def __init__(self, render_mode=None, FPS=10) -> None:
+    def __init__(self, render_mode=None, FPS=10, obs_type="vector") -> None:
+        self.metadata = {**self.metadata, "render_fps": FPS}
         self.render_mode = render_mode
+        self.obs_type = obs_type
         self.steps = 0
         self.action_space = Discrete(3)
         ## Observation space is the board
-        #self.observation_space = Box(low = np.array([0,0,0,0,0, 0, 0,0,0,0,0], dtype=np.float32), high = np.array([width, height,width, height,3, width * height, width + height,3,3,3,3], dtype=np.float32), dtype=np.float32)
-        self.observation_space = Box(low = np.array([0,0,0,0,0,0,0,0], dtype=np.float32), high = np.array([width, height,3, width + height,2, 2,2,2], dtype=np.float32), dtype=np.float32)
+        if self.obs_type == "image":
+            # Channel-first (C, H, W) image of the board, values in [0, 1].
+            # Channels: 0=snake body, 1=apple, 2=head.
+            self.observation_space = Box(
+                low=0.0, high=1.0, shape=(3, width, height), dtype=np.float32
+            )
+        else:
+            #self.observation_space = Box(low = np.array([0,0,0,0,0, 0, 0,0,0,0,0], dtype=np.float32), high = np.array([width, height,width, height,3, width * height, width + height,3,3,3,3], dtype=np.float32), dtype=np.float32)
+            self.observation_space = Box(low = np.array([0,0,0,0,0,0,0,0], dtype=np.float32), high = np.array([width, height,3, width + height,2, 2,2,2], dtype=np.float32), dtype=np.float32)
         self.reward_range = (min(-10, -width), 10)
         ## 0 = up, 1 = right, 2 = down, 3 = left
         self.direction = random.randint(0, 3)
@@ -61,7 +75,7 @@ class Game(gymnasium.Env):
         self.last_two[1] = action
 
 
-        if self.steps > 100:
+        if self.steps > 200:
             self.reseted = True
             self.reward_var = -10
             self.steps = 0 
@@ -71,8 +85,8 @@ class Game(gymnasium.Env):
         if self.reward_var is None:
             snake_head = self.snake[0]
             apple = self.apple
-            self.reward_var = -(abs(apple[0] - snake_head[0]) + abs(apple[1] - snake_head[1]))
-            
+            #self.reward_var = -(abs(apple[0] - snake_head[0]) + abs(apple[1] - snake_head[1])) / (2*width)
+            self.reward_var = -0.01
 
         return self.getState(), self.reward_var, self.reseted, self.truncated, {}
 
@@ -91,7 +105,6 @@ class Game(gymnasium.Env):
             self.clock = pygame.time.Clock()
 
 
-        # Did the user click the window close button?
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.close()
@@ -220,8 +233,8 @@ class Game(gymnasium.Env):
             if not self.eaten:
                 self.board[poped[0]][poped[1]] = 0
 
-    def reset(self, seed=None):
-        super().reset(seed=seed)
+    def reset(self, *, seed = None, options=None):
+        super().reset(seed=seed, options=options)
 
 
         self.reseted = False
@@ -247,6 +260,9 @@ class Game(gymnasium.Env):
 
 
     def getState(self):
+        if self.obs_type == "image":
+            return self._getImageState()
+
         # get what is to the sides of the snake
         board_with_bounds = []
         board_with_bounds.append([1.0] * (width + 2))
@@ -270,7 +286,36 @@ class Game(gymnasium.Env):
         return np.array([snake_head[0],snake_head[1],self.direction, distance,
                          # len(self.snake), abs(apple[0] - snake_head[0]) + abs(apple[1] - snake_head[1]), 
                         top, right, left, bottom], dtype=np.float32)
+
+    def _getImageState(self):
+        # Channel-first (C, H, W) board image, values in {0, 1}.
+        # Channels: 0=snake body (without head), 1=apple, 2=head.
+        img = np.zeros((3, width, height), dtype=np.float32)
+        img[0] = (self.board == 1).astype(np.float32)
+        img[1] = (self.board == 2).astype(np.float32)
+        head_x, head_y = self.snake[0]
+        # The head can be out of bounds on the step that ends the episode
+        # (the deque is updated before collision detection), so guard indexing.
+        if 0 <= head_x < width and 0 <= head_y < height:
+            img[0, head_x, head_y] = 0.0
+            img[2, head_x, head_y] = 1.0
+        return img
     
     #def reward(self, value=None):
         # reward is the distance to the apple
         #return -np.sqrt((self.snake[0][0] - self.apple[0]) ** 2 + (self.snake[0][1] - self.apple[1]) ** 2)
+
+
+
+register(
+    id='snake-v0',
+    entry_point='game:Game',
+    max_episode_steps=1000,
+)
+
+register(
+    id='snake-image-v0',
+    entry_point='game:Game',
+    max_episode_steps=1000,
+    kwargs={'obs_type': 'image'},
+)
